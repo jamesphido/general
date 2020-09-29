@@ -1,0 +1,41 @@
+SELECT			
+			
+s.shipment_id,			
+cast(s.tracking_acquired_time as date) as ship_date,			
+s.warehouse_id,			
+w.abbreviation as warehouse_abbreviation,			
+CASE WHEN p.partner_id IS NOT NULL THEN 'PHIDO' ELSE 'PetFlow' END AS Company,			
+sp.good_id,			
+sp.quantity,			
+sp.quantity_shipped,			
+sp.quantity-sp.quantity_shipped as quantity_shorted,			
+COALESCE(cogsa.cogs_pre_rebate,sgp.unit_price) as cogs_per_unit,			
+COALESCE(cogsa.cogs_pre_rebate,sgp.unit_price)*sp.quantity_shipped as total_cogs_shipped,			
+COALESCE(cogsa.cogs_pre_rebate,sgp.unit_price)*(sp.quantity-sp.quantity_shipped) as total_cogs_shorted			
+			
+FROM shipment s			
+JOIN customer_order co ON (s.order_id = co.order_id)			
+JOIN program p ON (co.program_id = p.program_id)			
+JOIN shipment_product sp ON (s.shipment_id = sp.shipment_id)			
+JOIN warehouse w ON (s.warehouse_id = w.warehouse_id)			
+LEFT JOIN (			
+			select 
+			cogs.product_option_id, 
+			cogs_pre_rebate
+			from 
+			latest_cogs lc
+			join product_option_cost_of_good cogs USING (cog_id)
+			) cogsa ON (cogsa.product_option_id = sp.good_id)
+			
+LEFT JOIN (			
+			SELECT
+			sgwp.good_id,
+			ROUND(AVG(sgwp.wholesale_price/sgwp.purchase_quantity),2) as unit_price
+			FROM supplier_good_warehouse_price sgwp
+			GROUP BY sgwp.good_id
+			) sgp ON (sgp.good_id = sp.good_id)
+			
+WHERE cast(s.tracking_acquired_time as date) BETWEEN (current_date - 30) AND current_date			
+AND co.stock_owner_id = 1			
+			
+ORDER BY ship_date DESC, shipment_id			
